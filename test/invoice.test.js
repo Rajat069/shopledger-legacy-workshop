@@ -37,15 +37,15 @@ test('A mixed-slab invoice taxes each discounted line and splits an odd paisa on
   assert.equal(figures.sgst, 17.55);
 });
 
-test('CURRENT BEHAVIOUR: the invoice calculates SAVE10 on the tax-inclusive amount', () => {
+test('The SAVE10 invoice reproduces the billed discount, GST and total', () => {
   const figures = invoice.computeInvoiceFigures(discountedRice);
   assert.equal(figures.subtotal, 1020);
-  assert.equal(figures.tax, 183.60);
-  assert.equal(figures.discount, 120.36);
-  assert.equal(figures.total, 1083.24);
+  assert.equal(figures.tax, 45.90);
+  assert.equal(figures.discount, 102);
+  assert.equal(figures.total, 963.90);
 });
 
-test('CURRENT BEHAVIOUR: both 5% rice and 12% ghee show 18% on invoice lines without a coupon', () => {
+test('Invoice lines use 5% for rice and 12% for ghee without a coupon', () => {
   const items = [
     { name: 'Rice', hsn: '1006', price: 100, qty: 2 },
     { name: 'Ghee', hsn: '0405', price: 100, qty: 1 }
@@ -53,40 +53,48 @@ test('CURRENT BEHAVIOUR: both 5% rice and 12% ghee show 18% on invoice lines wit
   const bill = pricing.computeTotals(items, '');
   const figures = invoice.computeInvoiceFigures({ items });
   assert.deepEqual(bill.lines.map(line => line.tax), [10, 12]);
-  assert.deepEqual(figures.rows.map(row => row.gstPercent), [18, 18]);
-  assert.deepEqual(figures.rows.map(row => row.lineTax), [36, 18]);
-  assert.equal(figures.total, 354);
+  assert.deepEqual(figures.rows.map(row => row.gstPercent), [5, 12]);
+  assert.deepEqual(figures.rows.map(row => row.lineTax), [10, 12]);
+  assert.equal(figures.total, 322);
 });
 
-test('CURRENT BEHAVIOUR: a ₹2,240 sale gets an invoice discount above the ₹150 SAVE10 cap', () => {
+test('A ₹2,240 sale gets the ₹150 SAVE10 cap on its invoice', () => {
   const items = [{ name: 'Rice', hsn: '1006', price: 560, qty: 4 }];
   const bill = pricing.computeTotals(items, 'SAVE10');
   const figures = invoice.computeInvoiceFigures({ items, coupon: 'SAVE10' });
   assert.equal(bill.discount, 150);
   assert.equal(bill.total, 2194.50);
-  assert.equal(figures.discount, 264.32);
-  assert.equal(figures.total, 2378.88);
+  assert.equal(figures.discount, 150);
+  assert.equal(figures.tax, 104.50);
+  assert.equal(figures.total, 2194.50);
 });
 
-test('CURRENT BEHAVIOUR: FLAT50 leaves invoice GST at its pre-discount value', () => {
+test('FLAT50 reduces the taxable amount before invoice GST', () => {
   const items = [{ name: 'Tea', hsn: '0902', price: 500, qty: 1 }];
   const figures = invoice.computeInvoiceFigures({ items, coupon: 'FLAT50' });
   assert.equal(pricing.computeTotals(items, 'FLAT50').tax, 81);
   assert.equal(figures.discount, 50);
-  assert.equal(figures.tax, 90);
-  assert.equal(figures.total, 540);
+  assert.equal(figures.tax, 81);
+  assert.equal(figures.total, 531);
 });
 
-test('CURRENT BEHAVIOUR: the printed notice and GST audit report the same ₹119.34 discrepancy', () => {
+test('The printed invoice and GST audit agree with the recorded ₹963.90 sale', () => {
   const html = invoice.render(discountedRice);
-  assert.match(html, /Accountant Reconciliation Notice/);
-  assert.match(html, /Invoice computed total \(₹1083\.24\)/);
-  assert.match(html, /Order Ledger recorded total \(₹963\.90\) by \+₹119\.34/);
+  assert.doesNotMatch(html, /Accountant Reconciliation Notice/);
+  assert.match(html, /Invoice Total<\/td><td[^>]*>₹963\.90</);
 
   const audit = reports.getGstReconciliation({ orders: [discountedRice] });
+  assert.equal(audit.mismatchCount, 0);
+  assert.equal(audit.rows[0].matched, true);
+  assert.equal(audit.rows[0].delta, 0);
+});
+
+test('A genuine one-paisa difference still appears on the invoice and in the GST audit', () => {
+  const order = { ...discountedRice, total: 963.89 };
+  assert.match(invoice.render(order), /Order Ledger recorded total \(₹963\.89\) by \+₹0\.01/);
+  const audit = reports.getGstReconciliation({ orders: [order] });
   assert.equal(audit.mismatchCount, 1);
-  assert.equal(audit.rows[0].matched, false);
-  assert.equal(audit.rows[0].delta, 119.34);
+  assert.equal(audit.rows[0].delta, 0.01);
 });
 
 test('An 18% sale without a coupon matches the ledger and prints without a reconciliation notice', () => {
