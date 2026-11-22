@@ -23,6 +23,20 @@ test('Checkout applies SAVE10 before calculating 5% GST', () => {
   assert.equal(bill.total, 963.90);
 });
 
+test('A mixed-slab invoice taxes each discounted line and splits an odd paisa once', () => {
+  const items = [
+    { name: 'Rice', hsn: '1006', price: 299.90, qty: 1 },
+    { name: 'Ghee', hsn: '0405', price: 200.10, qty: 1 }
+  ];
+  const figures = invoice.computeInvoiceFigures({ items, coupon: 'SAVE10' });
+  assert.equal(figures.total, 485.11);
+  assert.equal(figures.discount, 50);
+  assert.deepEqual(figures.rows.map(row => row.lineTax), [13.50, 21.61]);
+  assert.equal(figures.tax, 35.11);
+  assert.equal(figures.cgst, 17.56);
+  assert.equal(figures.sgst, 17.55);
+});
+
 test('CURRENT BEHAVIOUR: the invoice calculates SAVE10 on the tax-inclusive amount', () => {
   const figures = invoice.computeInvoiceFigures(discountedRice);
   assert.equal(figures.subtotal, 1020);
